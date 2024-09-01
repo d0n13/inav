@@ -28,6 +28,7 @@
 #include "platform.h"
 #include "io/serial.h"
 #include "drivers/time.h"
+#include "common/log.h"
 
 #if defined(USE_RANGEFINDER_A02)
 #include "drivers/rangefinder/rangefinder_virtual.h"
@@ -66,6 +67,7 @@ static bool a02RangefinderDetect(void)
 
 static void a02RangefinderInit(void)
 {
+    LOG_INFO(SYSTEM, "Attempting to detect A02 rangefinder");
     if (!portConfig) {
         return;
     }
@@ -76,6 +78,7 @@ static void a02RangefinderInit(void)
     }
 
     lastProtocolActivityMs = 0;
+    LOG_INFO(SYSTEM, "A02 rangefinder detected on %d", portConfig->identifier);
 }
 
 static void a02RangefinderUpdate(void)
@@ -111,6 +114,7 @@ static void a02RangefinderUpdate(void)
                 lastProtocolActivityMs = millis();
 
                 sensorData = ((a02Packet->data_h * 0xFF) + a02Packet->data_l);
+                LOG_INFO(SYSTEM, "Range: %ldmm", sensorData);
 
                 // Prepare for new packet
                 bufferPtr = 0;

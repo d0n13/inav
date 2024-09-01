@@ -4008,7 +4008,7 @@ groups:
           field: level
           table: log_level
           description: "Defines serial debugging log level. See `docs/development/serial_printf_debugging.md` for usage."
-          default_value: "ERROR"
+          default_value: "INFO"
         - name: log_topics
           field: topics
           min: 0
