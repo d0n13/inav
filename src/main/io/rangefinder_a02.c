@@ -33,8 +33,6 @@
 #if defined(USE_RANGEFINDER_A02)
 #include "drivers/rangefinder/rangefinder_virtual.h"
 
-#define A02_HDR 0xFF // Header Byte
-
 typedef struct __attribute__((packed)) {
     uint8_t     header; // Header Byte
     uint8_t     data_h; // Target distance high 8 bit
@@ -42,15 +40,30 @@ typedef struct __attribute__((packed)) {
     uint8_t     sum;    // Checksum
 } a02Packet_t;
 
-#define A02_PACKET_SIZE    sizeof(a02Packet_t)
-#define A02_TIMEOUT_MS     500 // 0.5s
+// Note about the A02YYUW rangefinder:
+//
+
+// This driver is for the automatic UART version of the A02YYUW rangefinder. There are a few
+// different versions of this rangefinder so choose the automatic UART version for this driver to work.
+//
+// The A02YYUW rangefinder has two modes of operation: automatic UART mode and real-time UART mode.
+//
+// When RX is unconnected or connected HIGH, this is automatic UART mode which is more accurate
+// Response time: 100-300ms
+//
+// When RX is pulled LOW, the module outputs a real-time value which may not be as accurate.
+// Response time: 100ms
+// This driver will read the value in either case...
+
+#define A02_HDR             0xFF // Header Byte
+#define A02_TIMEOUT_MS      100 // 100ms per reading
+#define A02_PACKET_SIZE     sizeof(a02Packet_t)
 
 static bool hasNewData = false;
 static bool hasRecievedData = false;
 static serialPort_t * serialPort = NULL;
 static serialPortConfig_t * portConfig;
 static uint8_t buffer[A02_PACKET_SIZE];
-static unsigned bufferPtr;
 
 static int32_t sensorData = RANGEFINDER_NO_NEW_DATA;
 static timeMs_t lastProtocolActivityMs;
@@ -83,44 +96,45 @@ static void a02RangefinderInit(void)
 
 static void a02RangefinderUpdate(void)
 {
+    bool validPacket = false;
+    uint8_t index = 0;
+
     a02Packet_t *a02Packet = (a02Packet_t *)buffer;
 
     while (serialRxBytesWaiting(serialPort) > 0) {
+
         uint8_t c = serialRead(serialPort);
 
-        if (bufferPtr < A02_PACKET_SIZE) {
-            buffer[bufferPtr++] = c;
-        }
-
-        // Check for valid header
-        if ((bufferPtr == 1) && (a02Packet->header != A02_HDR)) {
-            bufferPtr = 0;
+        // Check for the header byte
+        if (c == A02_HDR && index == 0) {
+            buffer[index++] = c;
             continue;
         }
 
-        // Check for complete packet
-        if (bufferPtr == A02_PACKET_SIZE) {
-            
-            // Check for valid checksum
-            if(a02Packet->sum != (a02Packet->header + a02Packet->data_h + a02Packet->data_l)) {
+        if(index > 0) {
+            buffer[index++] = c;
+            if(index == A02_PACKET_SIZE) {
                 
-                bufferPtr = 0;
-            
-            } else {
-
-                // Valid packet
-                hasNewData = true;
-                hasRecievedData = true;
-                lastProtocolActivityMs = millis();
-
-                sensorData = ((a02Packet->data_h * 0xFF) + a02Packet->data_l);
-                LOG_INFO(SYSTEM, "Range: %ldmm", sensorData);
-
-                // Prepare for new packet
-                bufferPtr = 0;
+                // Check for valid checksum
+                if(a02Packet->sum == (a02Packet->header + a02Packet->data_h + a02Packet->data_l)) {
+                    validPacket = true;
+                }
+                index = 0;
             }
         }
     }
+
+    // If no valid packet was found, return
+    if(!validPacket) {
+        return;
+    }
+    
+    hasNewData = true;
+    hasRecievedData = true;
+    lastProtocolActivityMs = millis();
+
+    sensorData = ((a02Packet->data_h * 0xFF) + a02Packet->data_l);
+    LOG_INFO(SYSTEM, "Range: %ldmm", sensorData);
 }
 
 static int32_t a02RangefinderGetDistance(void)
